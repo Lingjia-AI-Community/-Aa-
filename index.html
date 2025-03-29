@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>字母Aa辨音游戏</title>
+    <style>
+        body {
+            font-family: 'Comic Sans MS', cursive;
+            margin: 0;
+            padding: 20px;
+            background: #f0f9ff;
+        }
+
+        .container {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 90vh;
+            gap: 15px;
+        }
+
+        header {
+            text-align: center;
+            color: #2196F3;
+            font-size: 2em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .status-bar {
+            text-align: center;
+            font-size: 1.3em;
+            color: #d50000;
+            margin-bottom: 15px;
+        }
+
+        .game-area {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            border-top: 3px solid #FF9800;
+            padding-top: 20px;
+        }
+
+        .word-list {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            min-height: 100px;
+            flex-wrap: wrap;
+        }
+
+        .drop-zone {
+            padding: 20px;
+            background: #fff3e0;
+            border-radius: 15px;
+            min-height: 300px;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .drop-zone::before {
+            content: attr(data-label);
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-weight: bold;
+            color: #FF5722;
+        }
+
+        .word-item {
+            padding: 10px 20px;
+            background: #b3e5fc;
+            border-radius: 30px;
+            cursor: move;
+            border: 2px solid #03A9F4;
+            font-size: 1.1em;
+            transition: transform 0.2s;
+            position: relative;
+        }
+
+        .word-item:hover {
+            transform: scale(1.05);
+        }
+
+        .highlight {
+            color: #d50000;
+            text-decoration: underline;
+            font-weight: bold;
+        }
+
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1.2em;
+            background: #FF9800;
+            border: none;
+            border-radius: 30px;
+            color: white;
+            cursor: pointer;
+            margin: 0 15px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            background: #FB8C00;
+            transform: translateY(-2px);
+        }
+
+        .feedback {
+            position: absolute;
+            right: -30px;
+            font-size: 1.5em;
+        }
+    </style>
+</head>
+<body>
+    <header>字母Aa辨音游戏，你来挑战！</header>
+    <div class="status-bar">⏳ 剩余时间：<span id="time">20</span>秒 | 💰 当前得分：<span id="score">0</span>分</div>
+    
+    <div class="container">
+        <div class="word-list" id="wordList"></div>
+        <div class="game-area">
+            <div class="drop-zone" id="sameZone" data-label="相同发音区"></div>
+            <div class="drop-zone" id="diffZone" data-label="不同发音区"></div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button onclick="startGame()">开始游戏</button>
+        <button onclick="checkAnswers()">提交答案</button>
+    </div>
+
+    <script>
+        // 增强版单词库（按模式分组）
+        const wordGroups = {
+            a: [
+                { word: "dance", sound: "same" },
+                { word: "class", sound: "same" },
+                { word: "after", sound: "same" },
+                { word: "plant", sound: "same" },
+                { word: "last", sound: "same" }
+            ],
+            ay: [
+                { word: "day", sound: "same" },
+                { word: "play", sound: "same" },
+                { word: "say", sound: "same" }
+            ],
+            ar: [
+                { word: "park", sound: "different" },
+                { word: "start", sound: "different" }
+            ],
+            ea: [
+                { word: "eat", sound: "same" },
+                { word: "clean", sound: "same" },
+                { word: "teach", sound: "same" }
+            ],
+            al: [
+                { word: "walk", sound: "different" }
+            ]
+        };
+
+        let currentPattern = '';
+        let currentWords = [];
+        let score = 0;
+        let timeLeft = 20;
+        let timerId;
+        let isPlaying = false;
+
+        // 高亮当前模式
+        function highlightPattern(word, pattern) {
+            const regex = new RegExp(`(${pattern})`, "i");
+            return word.replace(regex, '<span class="highlight">$1</span>');
+        }
+
+        // 创建单词元素
+        function createWordItem(wordObj) {
+            const div = document.createElement('div');
+            div.className = 'word-item';
+            div.draggable = true;
+            div.innerHTML = highlightPattern(wordObj.word, currentPattern);
+            div.dataset.correct = wordObj.sound;
+            div.dataset.pattern = currentPattern;
+            
+            div.addEventListener('dragstart', handleDragStart);
+            div.addEventListener('mouseenter', () => speakWord(wordObj.word));
+            return div;
+        }
+
+        // 开始游戏
+        function startGame() {
+            if (isPlaying) return;
+            isPlaying = true;
+            score = 0;
+            timeLeft = 20;
+            document.getElementById('score').textContent = score;
+            
+            // 清空区域
+            document.getElementById('wordList').innerHTML = '';
+            document.getElementById('sameZone').innerHTML = '';
+            document.getElementById('diffZone').innerHTML = '';
+
+            // 随机选择模式
+            const patterns = Object.keys(wordGroups);
+            currentPattern = patterns[Math.floor(Math.random() * patterns.length)];
+            
+            // 获取当前模式的单词并随机选择5个
+            currentWords = [...wordGroups[currentPattern]]
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 5);
+
+            currentWords.forEach(word => {
+                document.getElementById('wordList').appendChild(createWordItem(word));
+            });
+
+            startTimer();
+        }
+
+        // 启动计时器
+        function startTimer() {
+            clearInterval(timerId);
+            document.getElementById('time').textContent = timeLeft;
+            
+            timerId = setInterval(() => {
+                timeLeft--;
+                document.getElementById('time').textContent = timeLeft;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerId);
+                    isPlaying = false;
+                    checkAnswers();
+                }
+            }, 1000);
+        }
+
+        // 处理拖拽逻辑
+        function handleDragStart(e) {
+            e.dataTransfer.setData("text/plain", e.target.dataset.correct);
+        }
+
+        // 处理放置逻辑
+        document.querySelectorAll('.drop-zone').forEach(zone => {
+            zone.addEventListener('dragover', e => e.preventDefault());
+            
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                const correctType = e.dataTransfer.getData("text/plain");
+                const draggedItem = document.querySelector('[draggable="true"]:active');
+                
+                if (!draggedItem) return;
+                
+                // 克隆并禁用拖动
+                const clone = draggedItem.cloneNode(true);
+                clone.draggable = false;
+                clone.style.cursor = 'default';
+                clone.style.opacity = '0.8';
+                
+                // 添加到目标区域
+                zone.appendChild(clone);
+                
+                // 从原列表移除
+                draggedItem.parentNode.removeChild(draggedItem);
+                
+                // 更新得分
+                const isCorrect = (zone.id === 'sameZone' && correctType === 'same') || 
+                                 (zone.id === 'diffZone' && correctType === 'different');
+                score += isCorrect ? 20 : -20;
+                document.getElementById('score').textContent = Math.max(0, score);
+            });
+        });
+
+        // 检查答案
+        function checkAnswers() {
+            clearInterval(timerId);
+            isPlaying = false;
+            
+            document.querySelectorAll('.word-item').forEach(item => {
+                const feedback = document.createElement('span');
+                feedback.className = 'feedback';
+                feedback.textContent = item.parentElement?.id === 
+                    (item.dataset.correct === 'same' ? 'sameZone' : 'diffZone') ? '✅' : '❌';
+                item.appendChild(feedback);
+            });
+        }
+
+        // 朗读单词
+        function speakWord(word) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(word);
+                utterance.lang = 'en-US';
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+    </script>
+</body>
+</html>
